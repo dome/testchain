@@ -1,0 +1,75 @@
+name: 'reth-test'
+
+services:
+
+  reth-init:
+    image: ghcr.io/paradigmxyz/reth:v1.4.1
+    volumes:
+      - ./data/reth:/root/.local/share/reth
+      - ./config:/config
+    pid: host
+    command: >
+      init
+      --chain /config/genesis.json
+      --log.file.directory /root/logs
+
+  reth:
+    restart: unless-stopped
+    image: ghcr.io/paradigmxyz/reth:v1.4.1
+    depends_on:
+      reth-init:
+           condition: service_completed_successfully
+
+#    ports:
+#      - '9001:9001' # metrics
+#      - '30303:30303' # eth/66 peering
+#      - '6545:8545' # rpc
+#      - '8551:8551' # engine
+    volumes:
+      - ./data/reth:/root/.local/share/reth
+      - ./config:/config
+    # https://paradigmxyz.github.io/reth/run/troubleshooting.html#concurrent-database-access-error-using-containersdocker
+    pid: host
+    command: >
+      node
+      --chain /config/genesis.json
+      --log.file.directory /root/logs
+      --authrpc.addr 0.0.0.0
+      --authrpc.port 8551
+      --authrpc.jwtsecret=/config/jwtsecret
+      --http --http.addr 0.0.0.0 --http.port 8545
+      --http.api "eth,net,web3"
+      --rpc.eth-proof-window=1200000
+      --rpc.max-blocks-per-filter=1200000
+      --bootnodes ${EL_NODE}
+      --trusted-peers ${EL_NODE}
+
+  lighthouse:
+    restart: unless-stopped
+    image: sigp/lighthouse
+    depends_on:
+      - reth
+#    ports:
+#      - '5052:5052/tcp' # rpc
+#      - '5053:5053/tcp'
+#      - '5054:5054/tcp' # metrics
+#      - '9000:9000/tcp' # p2p
+#      - '9000:9000/udp' # p2p
+    volumes:
+      - ./data/lighthousedata:/root/.lighthouse
+      - ./config:/config
+
+    command: >
+      lighthouse bn
+       --http
+       --http-address=0.0.0.0
+       --http-port=5052
+       --http-allow-origin=*
+       --testnet-dir=/config
+       --execution-endpoints=http://reth:8551
+       --jwt-secrets=/config/jwtsecret
+       --suggested-fee-recipient=${FEE_RECIPIENT}
+       --boot-nodes=${CL_NODE}
+       --checkpoint-sync-url http://5.223.56.64:5052
+       --prune-blobs=false
+
